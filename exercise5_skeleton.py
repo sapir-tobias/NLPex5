@@ -7,6 +7,7 @@ Do NOT change function signatures unless you document the change in your README.
 
 import os
 import pickle
+from xml.parsers.expat import model
 import numpy as np
 import torch
 import torch.nn as nn
@@ -363,8 +364,20 @@ def train_epoch(model, data_iterator, optimizer, criterion):
     :param criterion:     loss criterion (BCEWithLogitsLoss)
     :return: (avg_loss, avg_accuracy) over the epoch
     """
-    # TODO
-    pass
+    model.train() # Set the model to training mode
+    total_loss = 0.0
+    total_acc = 0.0
+    for inputs, labels in data_iterator:
+        optimizer.zero_grad()
+        outputs = model(inputs).squeeze(-1)  # Ensure outputs are of shape (batch,)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+        total_loss += loss.item()
+        total_acc += binary_accuracy(torch.sigmoid(outputs), labels)
+    avg_loss = total_loss / len(data_iterator)
+    avg_acc = total_acc / len(data_iterator)
+    return avg_loss, avg_acc
 
 
 def evaluate(model, data_iterator, criterion):
@@ -376,8 +389,18 @@ def evaluate(model, data_iterator, criterion):
     :param criterion:     loss criterion
     :return: (avg_loss, avg_accuracy)
     """
-    # TODO
-    pass
+    model.eval() # Set the model to evaluation mode
+    total_loss = 0.0
+    total_acc = 0.0
+    with torch.no_grad():
+        for inputs, labels in data_iterator:
+                outputs = model(inputs).squeeze(-1) # Ensure outputs are of shape (batch,)
+                loss = criterion(outputs, labels.float())
+        total_loss += loss.item()
+        total_acc += binary_accuracy(torch.sigmoid(outputs), labels)
+    avg_loss = total_loss / len(data_iterator)
+    avg_acc = total_acc / len(data_iterator)
+    return avg_loss, avg_acc
 
 
 def get_predictions_for_data(model, data_iter):
@@ -387,7 +410,6 @@ def get_predictions_for_data(model, data_iter):
     :param data_iter: PyTorch DataLoader
     :return: np.ndarray of shape (n_examples,)
     """
-    # TODO
     pass
 
 
@@ -404,8 +426,19 @@ def train_model(model, data_manager, n_epochs, lr, weight_decay=0.0):
     :return: dict with keys train_loss, train_acc, val_loss, val_acc
              (each a list of length n_epochs)
     """
-    # TODO
-    pass
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    criterion = nn.BCEWithLogitsLoss()
+    history = {"train_loss": [], "train_acc": [], "val_loss": [], "val_acc": []}
+    for epoch in range(n_epochs):
+        train_loss, train_acc = train_epoch(model, data_manager.get_torch_iterator(TRAIN), optimizer, criterion)
+        val_loss, val_acc = evaluate(model, data_manager.get_torch_iterator(VAL), criterion)
+
+        history["train_loss"].append(train_loss)
+        history["train_acc"].append(train_acc.item())
+        history["val_loss"].append(val_loss)
+        history["val_acc"].append(val_acc.item())
+        
+    return history
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -465,7 +498,6 @@ def train_log_linear_with_one_hot():
     and runs the training process.
     Hyperparameters: lr=0.01, n_epochs=10, batch_size=64
     """
-    # TODO
     pass
 
 
