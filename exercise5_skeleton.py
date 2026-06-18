@@ -369,9 +369,9 @@ def train_epoch(model, data_iterator, optimizer, criterion):
         optimizer.zero_grad()
         inputs = inputs.to(get_available_device())
         labels = labels.to(get_available_device())
-        
+
         outputs = model(inputs).squeeze(-1) # Ensure outputs are of shape (batch,)
-        loss = criterion(outputs, labels)
+        loss = criterion(outputs, labels.float())
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
@@ -395,10 +395,13 @@ def evaluate(model, data_iterator, criterion):
     total_acc = 0.0
     with torch.no_grad():
         for inputs, labels in data_iterator:
+                inputs = inputs.to(get_available_device())
+                labels = labels.to(get_available_device())
+
                 outputs = model(inputs).squeeze(-1) # Ensure outputs are of shape (batch,)
                 loss = criterion(outputs, labels.float())
-        total_loss += loss.item()
-        total_acc += binary_accuracy(torch.sigmoid(outputs), labels.float())
+                total_loss += loss.item()
+                total_acc += binary_accuracy(torch.sigmoid(outputs), labels.float())
     avg_loss = total_loss / len(data_iterator)
     avg_acc = total_acc / len(data_iterator)
     return avg_loss, avg_acc
