@@ -668,12 +668,19 @@ class TransformerSentimentClassifier(nn.Module):
     def forward(self, input_ids, attention_mask):
         # Pass the input_ids and attention_mask through the transformer
         outputs = self.transformer(input_ids=input_ids, attention_mask=attention_mask)
-        # distilroberta: last_hidden_state[:, 0] is the [CLS] token
-        cls_output = outputs.last_hidden_state[:, 0, :]  # (batch, hidden_dim)
-        return self.classifier(cls_output).squeeze(-1)  # logits, shape (batch,)
+        # Extract the hidden state corresponding to the [CLS] token
+        cls_output = outputs.last_hidden_state[:, 0, :]
+        # Run the [CLS] output through the classifier to get logits
+        cls_output = self.classifier(cls_output).squeeze(-1)
+
+        return cls_output
 
     def predict(self, input_ids, attention_mask):
-        return torch.sigmoid(self.forward(input_ids, attention_mask))
+        # Pass through the forward method to get logits
+        out = self.forward(input_ids, attention_mask)
+        # Apply sigmoid to get probabilities
+        out = torch.sigmoid(out)
+        return out
 
 
 def train_transformer(dataset_path="stanfordSentimentTreebank",
@@ -684,37 +691,44 @@ def train_transformer(dataset_path="stanfordSentimentTreebank",
     Report train/val loss and accuracy per epoch, test loss/accuracy,
     and accuracy on the two special subsets.
     """
+    # Get device and tokenizer
     device = get_available_device()
     tokenizer = AutoTokenizer.from_pretrained(TRANSFORMER_MODEL_NAME)
 
-    # Load dataset — no sub-phrases, 2500 training samples
+    # Load dataset with 2500 training samples
     dm = DataManager(
-        data_type=ONEHOT_AVERAGE,  # only used to load sentences; we won't use its iterators
+        data_type=ONEHOT_AVERAGE,
         use_sub_phrases=False,
         dataset_path=dataset_path,
         batch_size=batch_size,
     )
 
-    # Sub-sample training set to 2500 with a fixed seed
     rng = np.random.default_rng(42)
-    train_sents = dm.sentences[TRAIN]
-    indices = rng.choice(len(train_sents), size=min(2500, len(train_sents)), replace=False)
-    train_sents = [train_sents[i] for i in indices]
+    # Get the training sentences
+    training_set = dm.sentences[TRAIN]
+    # Randomly sample 2500 sentences from the training set without replacement
+    indices = rng.choice(len(training_set), size=min(2500, len(training_set)), replace=False)
+    training_set = [training_set[i] for i in indices]
 
-    train_dataset = TransformerSentimentDataset(train_sents, tokenizer)
+    # Create datasets and data loaders for training, validation, and testing
+    train_dataset = TransformerSentimentDataset(training_set, tokenizer)
     val_dataset = TransformerSentimentDataset(dm.sentences[VAL], tokenizer)
     test_dataset = TransformerSentimentDataset(dm.sentences[TEST], tokenizer)
 
+    # Create DataLoader instances for each dataset
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size)
     test_loader = DataLoader(test_dataset, batch_size=batch_size)
 
+    # Define the model, optimizer, and loss criterion
     model = TransformerSentimentClassifier().to(device)
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     criterion = nn.BCEWithLogitsLoss()
 
+    # Set up a dictionary to keep track of training and validation loss and accuracy
     history = {"train_loss": [], "train_acc": [], "val_loss": [], "val_acc": []}
 
+    # Set the training loop
     for epoch in range(n_epochs):
         # ── train ──
         model.train()
