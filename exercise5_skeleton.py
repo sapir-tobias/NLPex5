@@ -74,8 +74,23 @@ def load_transformer_embeddings(cache_path="transformer_emb_cache.pkl"):
     embedding_matrix : np.ndarray of shape (vocab_size, hidden_dim)
     embedding_dim    : int
     """
-    # TODO
-    pass
+    # If already cached, load from disk
+    if os.path.exists(cache_path):
+        tokenizer, embedding_matrix, embedding_dim = load_pickle(cache_path)
+        return tokenizer, embedding_matrix, embedding_dim
+
+    # If not cached, load from HuggingFace and cache
+    tokenizer = AutoTokenizer.from_pretrained(TRANSFORMER_MODEL_NAME)
+    model = AutoModel.from_pretrained(TRANSFORMER_MODEL_NAME)
+
+    # Extract the embedding matrix from the model
+    embedding_matrix = model.embeddings.word_embeddings.weight.detach().cpu().numpy()
+    embedding_dim = embedding_matrix.shape[1]
+
+    # Save to cache for future use
+    save_pickle((tokenizer, embedding_matrix, embedding_dim), cache_path)
+
+    return tokenizer, embedding_matrix, embedding_dim
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -167,8 +182,25 @@ def sentence_to_embedding(sent, tokenizer, embedding_matrix, seq_len, embedding_
     :param embedding_dim:    int
     :return: np.ndarray of shape (seq_len, embedding_dim)
     """
-    # TODO
-    pass
+    # Extract the set of special token IDs from the tokenizer
+    special_ids = set(tokenizer.all_special_ids)
+
+    # Encode the sentence into token IDs
+    token_ids = tokenizer.encode(sent.text if isinstance(sent.text, str) else " ".join(sent.text))
+    # Filter out special tokens
+    token_ids = [tid for tid in token_ids if tid not in special_ids]
+
+    # Initialize the result matrix with zeros
+    result = np.zeros((seq_len, embedding_dim), dtype=np.float32)
+
+    # Truncate the token IDs to seq_len
+    token_ids = token_ids[:seq_len]
+
+    for i, tid in enumerate(token_ids):
+        if tid < len(embedding_matrix):
+            result[i] = embedding_matrix[tid]
+
+    return result
 
 
 # ──────────────────────────────────────────────────────────────────────────────
