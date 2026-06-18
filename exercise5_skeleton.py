@@ -17,6 +17,7 @@ import data_loader
 from data_loader import get_negated_polarity_examples, get_rare_words_examples
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
@@ -26,13 +27,13 @@ import matplotlib.pyplot as plt
 
 SEQ_LEN = 52
 
-ONEHOT_AVERAGE       = "onehot_average"
-TRANSFORMER_AVERAGE  = "transformer_average"
+ONEHOT_AVERAGE = "onehot_average"
+TRANSFORMER_AVERAGE = "transformer_average"
 TRANSFORMER_SEQUENCE = "transformer_sequence"
 
 TRAIN = "train"
-VAL   = "val"
-TEST  = "test"
+VAL = "val"
+TEST = "test"
 
 TRANSFORMER_MODEL_NAME = "distilroberta-base"
 
@@ -165,7 +166,7 @@ def get_transformer_average(sent, tokenizer, embedding_matrix, embedding_dim):
             valid_embeddings.append(embedding_matrix[token_id])
     if not valid_embeddings:
         return np.zeros(embedding_dim)
-    return np.mean(valid_embeddings, axis=0)        
+    return np.mean(valid_embeddings, axis=0)
 
 
 def sentence_to_embedding(sent, tokenizer, embedding_matrix, seq_len, embedding_dim):
@@ -220,8 +221,8 @@ class OnlineDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        sent  = self.data[idx]
-        emb   = self.sent_func(sent, **self.sent_func_kwargs)
+        sent = self.data[idx]
+        emb = self.sent_func(sent, **self.sent_func_kwargs)
         label = sent.sentiment_class
         return torch.tensor(emb, dtype=torch.float32), torch.tensor(label, dtype=torch.float32)
 
@@ -243,7 +244,7 @@ class DataManager:
             self.sentences[TRAIN] = self.sentiment_dataset.get_train_set_phrases()
         else:
             self.sentences[TRAIN] = self.sentiment_dataset.get_train_set()
-        self.sentences[VAL]  = self.sentiment_dataset.get_validation_set()
+        self.sentences[VAL] = self.sentiment_dataset.get_validation_set()
         self.sentences[TEST] = self.sentiment_dataset.get_test_set()
 
         words_list = list(self.sentiment_dataset.get_word_counts().keys())
@@ -256,27 +257,27 @@ class DataManager:
             assert tokenizer is not None and embedding_matrix is not None
             self.sent_func = get_transformer_average
             self.sent_func_kwargs = {
-                "tokenizer":        tokenizer,
+                "tokenizer": tokenizer,
                 "embedding_matrix": embedding_matrix,
-                "embedding_dim":    embedding_dim,
+                "embedding_dim": embedding_dim,
             }
 
         elif data_type == TRANSFORMER_SEQUENCE:
             assert tokenizer is not None and embedding_matrix is not None
             self.sent_func = sentence_to_embedding
             self.sent_func_kwargs = {
-                "tokenizer":        tokenizer,
+                "tokenizer": tokenizer,
                 "embedding_matrix": embedding_matrix,
-                "seq_len":          SEQ_LEN,
-                "embedding_dim":    embedding_dim,
+                "seq_len": SEQ_LEN,
+                "embedding_dim": embedding_dim,
             }
         else:
             raise ValueError(f"Unknown data_type: {data_type}")
 
-        self.torch_datasets  = {k: OnlineDataset(sents, self.sent_func, self.sent_func_kwargs)
-                                 for k, sents in self.sentences.items()}
+        self.torch_datasets = {k: OnlineDataset(sents, self.sent_func, self.sent_func_kwargs)
+                               for k, sents in self.sentences.items()}
         self.torch_iterators = {k: DataLoader(ds, batch_size=batch_size, shuffle=(k == TRAIN))
-                                 for k, ds in self.torch_datasets.items()}
+                                for k, ds in self.torch_datasets.items()}
 
     def get_torch_iterator(self, data_subset=TRAIN):
         return self.torch_iterators[data_subset]
@@ -324,15 +325,39 @@ class LSTM(nn.Module):
 
     def __init__(self, embedding_dim, hidden_dim, n_layers, dropout):
         super().__init__()
-        # TODO
+        # Set an instance of the nn.LSTM module with the inputted value
+        self.lstm = nn.LSTM(
+            input_size=embedding_dim,
+            hidden_size=hidden_dim,
+            num_layers=n_layers,
+            bidirectional=True,
+            batch_first=True
+        )
+        # Define a dropout layer
+        self.dropout = nn.Dropout(dropout)
+        # Set a linear layer to map the concatenated hidden states to a single output
+        self.mlp = nn.Linear(hidden_dim * 2, 1)
 
-    def forward(self, text):
-        # TODO
-        pass
+    def forward(self, x):
+        # Insert through the lstm
+        lstm_out, (hidden, _) = self.lstm(x)
+        # Take final layer's forward and backward hidden states
+        forward_hidden = hidden[-2]
+        backward_hidden = hidden[-1]
+        # Concatenate the forward and backward hidden states
+        output = torch.cat([forward_hidden, backward_hidden], dim=1)
+        # Apply dropout
+        output = self.dropout(output)
+        # Output through the linear layer to get logits
+        output = self.mlp(output).squeeze(1)
 
-    def predict(self, text):
-        # TODO
-        pass
+        return output
+
+    def predict(self, x):
+        # Pass through the forward method
+        out = self.forward(x)
+        # Return the sigmoid of the output to get probabilities
+        return torch.sigmoid(out)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -417,32 +442,36 @@ def plot_and_save(history, title_prefix, save_prefix):
 
     plt.figure()
     plt.plot(epochs, history["train_loss"], label="Train")
-    plt.plot(epochs, history["val_loss"],   label="Validation")
-    plt.xlabel("Epoch"); plt.ylabel("Loss")
+    plt.plot(epochs, history["val_loss"], label="Validation")
+    plt.xlabel("Epoch");
+    plt.ylabel("Loss")
     plt.title(f"{title_prefix} – Loss")
-    plt.legend(); plt.tight_layout()
+    plt.legend();
+    plt.tight_layout()
     plt.savefig(f"{save_prefix}_loss.png")
     plt.close()
 
     plt.figure()
     plt.plot(epochs, history["train_acc"], label="Train")
-    plt.plot(epochs, history["val_acc"],   label="Validation")
-    plt.xlabel("Epoch"); plt.ylabel("Accuracy")
+    plt.plot(epochs, history["val_acc"], label="Validation")
+    plt.xlabel("Epoch");
+    plt.ylabel("Accuracy")
     plt.title(f"{title_prefix} – Accuracy")
-    plt.legend(); plt.tight_layout()
+    plt.legend();
+    plt.tight_layout()
     plt.savefig(f"{save_prefix}_acc.png")
     plt.close()
 
 
 def evaluate_special_subsets(model, data_manager):
     """Prints accuracy on negated-polarity and rare-words subsets (provided)."""
-    dataset    = data_manager.sentiment_dataset
+    dataset = data_manager.sentiment_dataset
     test_sents = data_manager.sentences[TEST]
 
-    neg_idx  = get_negated_polarity_examples(test_sents)
+    neg_idx = get_negated_polarity_examples(test_sents)
     rare_idx = get_rare_words_examples(test_sents, dataset)
 
-    all_preds  = get_predictions_for_data(model, data_manager.get_torch_iterator(TEST))
+    all_preds = get_predictions_for_data(model, data_manager.get_torch_iterator(TEST))
     all_labels = data_manager.get_labels(TEST)
 
     for name, indices in [("Negated polarity", neg_idx), ("Rare words", rare_idx)]:
@@ -493,8 +522,48 @@ def train_lstm_with_transformer():
     and runs the training process.
     Hyperparameters: lr=0.001, weight_decay=0.0001, dropout=0.5, n_epochs=4, batch_size=64
     """
-    # TODO
-    pass
+    # Load the Transformer tokenizer and embedding matrix
+    tokenizer, embedding_matrix, embedding_dim = load_transformer_embeddings()
+
+    # Set device
+    device = get_available_device()
+
+    # Create the DataManager for the Transformer sequence data
+    dm = DataManager(
+        data_type=TRANSFORMER_SEQUENCE,
+        use_sub_phrases=True,
+        batch_size=64,
+        embedding_dim=embedding_dim,
+        tokenizer=tokenizer,
+        embedding_matrix=embedding_matrix,
+    )
+
+    # Create an instance of our LSTM model and put it in the correct device
+    model = LSTM(
+        embedding_dim=embedding_dim,
+        hidden_dim=100,
+        n_layers=1,
+        dropout=0.5,
+    ).to(device)
+
+    # Train the model and collect the training history
+    history = train_model(
+        model=model,
+        data_manager=dm,
+        n_epochs=4,
+        lr=0.001,
+        weight_decay=0.0001,
+    )
+
+    # Plot and save the training history
+    plot_and_save(history, "LSTM (Transformer Embeddings)", "lstm_transformer")
+    # Define the loss criterion
+    criterion = nn.BCEWithLogitsLoss()
+    # Evaluate the model on the test set
+    test_loss, test_acc = evaluate(model, dm.get_torch_iterator(TEST), criterion)
+    print(f"LSTM Test Loss: {test_loss:.4f} | Test Accuracy: {test_acc:.4f}")
+    # Evaluate the model on special subsets
+    evaluate_special_subsets(model, dm)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -518,8 +587,8 @@ class TransformerSentimentDataset(Dataset):
     MAX_LENGTH = 64
 
     def __init__(self, sentences, tokenizer, max_length=None):
-        self.sentences  = sentences
-        self.tokenizer  = tokenizer
+        self.sentences = sentences
+        self.tokenizer = tokenizer
         self.max_length = max_length or self.MAX_LENGTH
 
     def __len__(self):
