@@ -303,15 +303,13 @@ class LogLinear(nn.Module):
 
     def __init__(self, embedding_dim):
         super().__init__()
-        # TODO
+        self.linear = nn.Linear(embedding_dim, 1)
 
     def forward(self, x):
-        # TODO
-        pass
+        return self.linear(x)
 
     def predict(self, x):
-        # TODO
-        pass
+        return torch.sigmoid(self.forward(x))
 
 
 class LSTM(nn.Module):
@@ -369,7 +367,10 @@ def train_epoch(model, data_iterator, optimizer, criterion):
     total_acc = 0.0
     for inputs, labels in data_iterator:
         optimizer.zero_grad()
-        outputs = model(inputs).squeeze(-1)  # Ensure outputs are of shape (batch,)
+        inputs = inputs.to(get_available_device())
+        labels = labels.to(get_available_device())
+        
+        outputs = model(inputs).squeeze(-1) # Ensure outputs are of shape (batch,)
         loss = criterion(outputs, labels)
         loss.backward()
         optimizer.step()
@@ -397,7 +398,7 @@ def evaluate(model, data_iterator, criterion):
                 outputs = model(inputs).squeeze(-1) # Ensure outputs are of shape (batch,)
                 loss = criterion(outputs, labels.float())
         total_loss += loss.item()
-        total_acc += binary_accuracy(torch.sigmoid(outputs), labels)
+        total_acc += binary_accuracy(torch.sigmoid(outputs), labels.float())
     avg_loss = total_loss / len(data_iterator)
     avg_acc = total_acc / len(data_iterator)
     return avg_loss, avg_acc
@@ -410,7 +411,12 @@ def get_predictions_for_data(model, data_iter):
     :param data_iter: PyTorch DataLoader
     :return: np.ndarray of shape (n_examples,)
     """
-    pass
+    all_probs = []
+    for inputs, _ in data_iter:
+        inputs = inputs.to(get_available_device())
+        probs = model.predict(inputs).squeeze(-1) # Get probabilities
+        all_probs.append(probs.cpu().numpy())
+    return np.concatenate(all_probs)
 
 
 def train_model(model, data_manager, n_epochs, lr, weight_decay=0.0):
@@ -498,8 +504,9 @@ def train_log_linear_with_one_hot():
     and runs the training process.
     Hyperparameters: lr=0.01, n_epochs=10, batch_size=64
     """
-    pass
-
+    model = LogLinear(embedding_dim=len(data_loader.SentimentTreeBank().get_word_counts())).to(get_available_device())
+    data_manager = DataManager(data_type=ONEHOT_AVERAGE, use_sub_phrases=True, batch_size=64)
+    train_model(model, data_manager, n_epochs=10, lr=0.01)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Section 7 – Log-linear with Transformer embeddings
@@ -511,7 +518,12 @@ def train_log_linear_with_transformer():
     log-linear model and runs the training process.
     Hyperparameters: lr=0.01, n_epochs=10, batch_size=64
     """
-    # TODO
+    transformer_kwargs = load_transformer_embeddings()
+    model = LogLinear(embedding_dim=transformer_kwargs[2]).to(get_available_device())
+    data_manager = DataManager(data_type=TRANSFORMER_AVERAGE, use_sub_phrases=True, batch_size=64,
+                               tokenizer=transformer_kwargs[0], embedding_matrix=transformer_kwargs[1],
+                               embedding_dim=transformer_kwargs[2])
+    train_model(model, data_manager, n_epochs=10, lr=0.01)
     pass
 
 
