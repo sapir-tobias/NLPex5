@@ -7,17 +7,16 @@ Do NOT change function signatures unless you document the change in your README.
 
 import os
 import pickle
-from xml.parsers.expat import model
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
-
+from transformers import AutoModel, AutoTokenizer
 import data_loader
 from data_loader import get_negated_polarity_examples, get_rare_words_examples
-
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
@@ -27,13 +26,13 @@ import matplotlib.pyplot as plt
 
 SEQ_LEN = 52
 
-ONEHOT_AVERAGE       = "onehot_average"
-TRANSFORMER_AVERAGE  = "transformer_average"
+ONEHOT_AVERAGE = "onehot_average"
+TRANSFORMER_AVERAGE = "transformer_average"
 TRANSFORMER_SEQUENCE = "transformer_sequence"
 
 TRAIN = "train"
-VAL   = "val"
-TEST  = "test"
+VAL = "val"
+TEST = "test"
 
 TRANSFORMER_MODEL_NAME = "distilroberta-base"
 
@@ -166,7 +165,7 @@ def get_transformer_average(sent, tokenizer, embedding_matrix, embedding_dim):
             valid_embeddings.append(embedding_matrix[token_id])
     if not valid_embeddings:
         return np.zeros(embedding_dim)
-    return np.mean(valid_embeddings, axis=0)        
+    return np.mean(valid_embeddings, axis=0)
 
 
 def sentence_to_embedding(sent, tokenizer, embedding_matrix, seq_len, embedding_dim):
@@ -221,8 +220,8 @@ class OnlineDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        sent  = self.data[idx]
-        emb   = self.sent_func(sent, **self.sent_func_kwargs)
+        sent = self.data[idx]
+        emb = self.sent_func(sent, **self.sent_func_kwargs)
         label = sent.sentiment_class
         return torch.tensor(emb, dtype=torch.float32), torch.tensor(label, dtype=torch.float32)
 
@@ -244,7 +243,7 @@ class DataManager:
             self.sentences[TRAIN] = self.sentiment_dataset.get_train_set_phrases()
         else:
             self.sentences[TRAIN] = self.sentiment_dataset.get_train_set()
-        self.sentences[VAL]  = self.sentiment_dataset.get_validation_set()
+        self.sentences[VAL] = self.sentiment_dataset.get_validation_set()
         self.sentences[TEST] = self.sentiment_dataset.get_test_set()
 
         words_list = list(self.sentiment_dataset.get_word_counts().keys())
@@ -257,27 +256,27 @@ class DataManager:
             assert tokenizer is not None and embedding_matrix is not None
             self.sent_func = get_transformer_average
             self.sent_func_kwargs = {
-                "tokenizer":        tokenizer,
+                "tokenizer": tokenizer,
                 "embedding_matrix": embedding_matrix,
-                "embedding_dim":    embedding_dim,
+                "embedding_dim": embedding_dim,
             }
 
         elif data_type == TRANSFORMER_SEQUENCE:
             assert tokenizer is not None and embedding_matrix is not None
             self.sent_func = sentence_to_embedding
             self.sent_func_kwargs = {
-                "tokenizer":        tokenizer,
+                "tokenizer": tokenizer,
                 "embedding_matrix": embedding_matrix,
-                "seq_len":          SEQ_LEN,
-                "embedding_dim":    embedding_dim,
+                "seq_len": SEQ_LEN,
+                "embedding_dim": embedding_dim,
             }
         else:
             raise ValueError(f"Unknown data_type: {data_type}")
 
-        self.torch_datasets  = {k: OnlineDataset(sents, self.sent_func, self.sent_func_kwargs)
-                                 for k, sents in self.sentences.items()}
+        self.torch_datasets = {k: OnlineDataset(sents, self.sent_func, self.sent_func_kwargs)
+                               for k, sents in self.sentences.items()}
         self.torch_iterators = {k: DataLoader(ds, batch_size=batch_size, shuffle=(k == TRAIN))
-                                 for k, ds in self.torch_datasets.items()}
+                                for k, ds in self.torch_datasets.items()}
 
     def get_torch_iterator(self, data_subset=TRAIN):
         return self.torch_iterators[data_subset]
@@ -323,15 +322,39 @@ class LSTM(nn.Module):
 
     def __init__(self, embedding_dim, hidden_dim, n_layers, dropout):
         super().__init__()
-        # TODO
+        # Set an instance of the nn.LSTM module with the inputted value
+        self.lstm = nn.LSTM(
+            input_size=embedding_dim,
+            hidden_size=hidden_dim,
+            num_layers=n_layers,
+            bidirectional=True,
+            batch_first=True
+        )
+        # Define a dropout layer
+        self.dropout = nn.Dropout(dropout)
+        # Set a linear layer to map the concatenated hidden states to a single output
+        self.mlp = nn.Linear(hidden_dim * 2, 1)
 
-    def forward(self, text):
-        # TODO
-        pass
+    def forward(self, x):
+        # Insert through the lstm
+        lstm_out, (hidden, _) = self.lstm(x)
+        # Take final layer's forward and backward hidden states
+        forward_hidden = hidden[-2]
+        backward_hidden = hidden[-1]
+        # Concatenate the forward and backward hidden states
+        output = torch.cat([forward_hidden, backward_hidden], dim=1)
+        # Apply dropout
+        output = self.dropout(output)
+        # Output through the linear layer to get logits
+        output = self.mlp(output).squeeze(1)
 
-    def predict(self, text):
-        # TODO
-        pass
+        return output
+
+    def predict(self, x):
+        # Pass through the forward method
+        out = self.forward(x)
+        # Return the sigmoid of the output to get probabilities
+        return torch.sigmoid(out)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -362,7 +385,7 @@ def train_epoch(model, data_iterator, optimizer, criterion):
     :param criterion:     loss criterion (BCEWithLogitsLoss)
     :return: (avg_loss, avg_accuracy) over the epoch
     """
-    model.train() # Set the model to training mode
+    model.train()  # Set the model to training mode
     total_loss = 0.0
     total_acc = 0.0
     for inputs, labels in data_iterator:
@@ -390,7 +413,7 @@ def evaluate(model, data_iterator, criterion):
     :param criterion:     loss criterion
     :return: (avg_loss, avg_accuracy)
     """
-    model.eval() # Set the model to evaluation mode
+    model.eval()  # Set the model to evaluation mode
     total_loss = 0.0
     total_acc = 0.0
     with torch.no_grad():
@@ -446,7 +469,7 @@ def train_model(model, data_manager, n_epochs, lr, weight_decay=0.0):
         history["train_acc"].append(train_acc.item())
         history["val_loss"].append(val_loss)
         history["val_acc"].append(val_acc.item())
-        
+
     return history
 
 
@@ -459,32 +482,36 @@ def plot_and_save(history, title_prefix, save_prefix):
 
     plt.figure()
     plt.plot(epochs, history["train_loss"], label="Train")
-    plt.plot(epochs, history["val_loss"],   label="Validation")
-    plt.xlabel("Epoch"); plt.ylabel("Loss")
+    plt.plot(epochs, history["val_loss"], label="Validation")
+    plt.xlabel("Epoch");
+    plt.ylabel("Loss")
     plt.title(f"{title_prefix} – Loss")
-    plt.legend(); plt.tight_layout()
+    plt.legend();
+    plt.tight_layout()
     plt.savefig(f"{save_prefix}_loss.png")
     plt.close()
 
     plt.figure()
     plt.plot(epochs, history["train_acc"], label="Train")
-    plt.plot(epochs, history["val_acc"],   label="Validation")
-    plt.xlabel("Epoch"); plt.ylabel("Accuracy")
+    plt.plot(epochs, history["val_acc"], label="Validation")
+    plt.xlabel("Epoch");
+    plt.ylabel("Accuracy")
     plt.title(f"{title_prefix} – Accuracy")
-    plt.legend(); plt.tight_layout()
+    plt.legend();
+    plt.tight_layout()
     plt.savefig(f"{save_prefix}_acc.png")
     plt.close()
 
 
 def evaluate_special_subsets(model, data_manager):
     """Prints accuracy on negated-polarity and rare-words subsets (provided)."""
-    dataset    = data_manager.sentiment_dataset
+    dataset = data_manager.sentiment_dataset
     test_sents = data_manager.sentences[TEST]
 
-    neg_idx  = get_negated_polarity_examples(test_sents)
+    neg_idx = get_negated_polarity_examples(test_sents)
     rare_idx = get_rare_words_examples(test_sents, dataset)
 
-    all_preds  = get_predictions_for_data(model, data_manager.get_torch_iterator(TEST))
+    all_preds = get_predictions_for_data(model, data_manager.get_torch_iterator(TEST))
     all_labels = data_manager.get_labels(TEST)
 
     for name, indices in [("Negated polarity", neg_idx), ("Rare words", rare_idx)]:
@@ -540,8 +567,48 @@ def train_lstm_with_transformer():
     and runs the training process.
     Hyperparameters: lr=0.001, weight_decay=0.0001, dropout=0.5, n_epochs=4, batch_size=64
     """
-    # TODO
-    pass
+    # Load the Transformer tokenizer and embedding matrix
+    tokenizer, embedding_matrix, embedding_dim = load_transformer_embeddings()
+
+    # Set device
+    device = get_available_device()
+
+    # Create the DataManager for the Transformer sequence data
+    dm = DataManager(
+        data_type=TRANSFORMER_SEQUENCE,
+        use_sub_phrases=True,
+        batch_size=64,
+        embedding_dim=embedding_dim,
+        tokenizer=tokenizer,
+        embedding_matrix=embedding_matrix,
+    )
+
+    # Create an instance of our LSTM model and put it in the correct device
+    model = LSTM(
+        embedding_dim=embedding_dim,
+        hidden_dim=100,
+        n_layers=1,
+        dropout=0.5,
+    ).to(device)
+
+    # Train the model and collect the training history
+    history = train_model(
+        model=model,
+        data_manager=dm,
+        n_epochs=4,
+        lr=0.001,
+        weight_decay=0.0001,
+    )
+
+    # Plot and save the training history
+    plot_and_save(history, "LSTM (Transformer Embeddings)", "lstm_transformer")
+    # Define the loss criterion
+    criterion = nn.BCEWithLogitsLoss()
+    # Evaluate the model on the test set
+    test_loss, test_acc = evaluate(model, dm.get_torch_iterator(TEST), criterion)
+    print(f"LSTM Test Loss: {test_loss:.4f} | Test Accuracy: {test_acc:.4f}")
+    # Evaluate the model on special subsets
+    evaluate_special_subsets(model, dm)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -565,16 +632,35 @@ class TransformerSentimentDataset(Dataset):
     MAX_LENGTH = 64
 
     def __init__(self, sentences, tokenizer, max_length=None):
-        self.sentences  = sentences
-        self.tokenizer  = tokenizer
+        self.sentences = sentences
+        self.tokenizer = tokenizer
         self.max_length = max_length or self.MAX_LENGTH
 
     def __len__(self):
         return len(self.sentences)
 
     def __getitem__(self, idx):
-        # TODO
-        pass
+        # Get the sentence at the given index
+        sent = self.sentences[idx]
+        # Extract the text from the sentence object
+        if isinstance(sent.text, str):
+            text = sent.text
+        else:
+            text = " ".join(sent.text)
+        # Use the tokenizer to encode the text, with padding and truncation
+        encoding = self.tokenizer(
+            text,
+            max_length=self.max_length,
+            padding="max_length",
+            truncation=True,
+            return_tensors="pt",
+        )
+        # Extract the input_ids and attention_mask from the encoding
+        input_ids = encoding["input_ids"].squeeze(0)
+        attention_mask = encoding["attention_mask"].squeeze(0)
+        # Get the label from the sentence object
+        label = torch.tensor(sent.sentiment_class, dtype=torch.float32)
+        return input_ids, attention_mask, label
 
 
 class TransformerSentimentClassifier(nn.Module):
@@ -587,15 +673,22 @@ class TransformerSentimentClassifier(nn.Module):
 
     def __init__(self, model_name=TRANSFORMER_MODEL_NAME):
         super().__init__()
-        # TODO
+        # Load the pre-trained Transformer model
+        self.transformer = AutoModel.from_pretrained(model_name)
+        # Extract the transformer's hidden dimension
+        hidden_dim = self.transformer.config.hidden_size
+        # Define a linear layer for classification
+        self.classifier = nn.Linear(hidden_dim, 1)
 
     def forward(self, input_ids, attention_mask):
-        # TODO
-        pass
+        # Pass the input_ids and attention_mask through the transformer
+        outputs = self.transformer(input_ids=input_ids, attention_mask=attention_mask)
+        # distilroberta: last_hidden_state[:, 0] is the [CLS] token
+        cls_output = outputs.last_hidden_state[:, 0, :]  # (batch, hidden_dim)
+        return self.classifier(cls_output).squeeze(-1)  # logits, shape (batch,)
 
     def predict(self, input_ids, attention_mask):
-        # TODO
-        pass
+        return torch.sigmoid(self.forward(input_ids, attention_mask))
 
 
 def train_transformer(dataset_path="stanfordSentimentTreebank",
@@ -606,5 +699,107 @@ def train_transformer(dataset_path="stanfordSentimentTreebank",
     Report train/val loss and accuracy per epoch, test loss/accuracy,
     and accuracy on the two special subsets.
     """
-    # TODO
-    pass
+    device = get_available_device()
+    tokenizer = AutoTokenizer.from_pretrained(TRANSFORMER_MODEL_NAME)
+
+    # Load dataset — no sub-phrases, 2500 training samples
+    dm = DataManager(
+        data_type=ONEHOT_AVERAGE,  # only used to load sentences; we won't use its iterators
+        use_sub_phrases=False,
+        dataset_path=dataset_path,
+        batch_size=batch_size,
+    )
+
+    # Sub-sample training set to 2500 with a fixed seed
+    rng = np.random.default_rng(42)
+    train_sents = dm.sentences[TRAIN]
+    indices = rng.choice(len(train_sents), size=min(2500, len(train_sents)), replace=False)
+    train_sents = [train_sents[i] for i in indices]
+
+    train_dataset = TransformerSentimentDataset(train_sents, tokenizer)
+    val_dataset = TransformerSentimentDataset(dm.sentences[VAL], tokenizer)
+    test_dataset = TransformerSentimentDataset(dm.sentences[TEST], tokenizer)
+
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size)
+
+    model = TransformerSentimentClassifier().to(device)
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    criterion = nn.BCEWithLogitsLoss()
+
+    history = {"train_loss": [], "train_acc": [], "val_loss": [], "val_acc": []}
+
+    for epoch in range(n_epochs):
+        # ── train ──
+        model.train()
+        total_loss, total_acc = 0.0, 0.0
+        for input_ids, attention_mask, labels in train_loader:
+            input_ids = input_ids.to(device)
+            attention_mask = attention_mask.to(device)
+            labels = labels.to(device)
+
+            optimizer.zero_grad()
+            logits = model(input_ids, attention_mask)
+            loss = criterion(logits, labels)
+            loss.backward()
+            optimizer.step()
+
+            total_loss += loss.item()
+            total_acc += binary_accuracy(torch.sigmoid(logits), labels)
+
+        history["train_loss"].append(total_loss / len(train_loader))
+        history["train_acc"].append((total_acc / len(train_loader)).item())
+
+        # ── validate ──
+        model.eval()
+        val_loss, val_acc = 0.0, 0.0
+        with torch.no_grad():
+            for input_ids, attention_mask, labels in val_loader:
+                input_ids = input_ids.to(device)
+                attention_mask = attention_mask.to(device)
+                labels = labels.to(device)
+                logits = model(input_ids, attention_mask)
+                val_loss += criterion(logits, labels).item()
+                val_acc += binary_accuracy(torch.sigmoid(logits), labels)
+
+        history["val_loss"].append(val_loss / len(val_loader))
+        history["val_acc"].append((val_acc / len(val_loader)).item())
+
+        print(f"Epoch {epoch + 1}/{n_epochs} | "
+              f"Train loss: {history['train_loss'][-1]:.4f} acc: {history['train_acc'][-1]:.4f} | "
+              f"Val loss:   {history['val_loss'][-1]:.4f} acc: {history['val_acc'][-1]:.4f}")
+
+    plot_and_save(history, "Fine-tuned Transformer", "transformer_finetune")
+
+    # ── test ──
+    model.eval()
+    test_loss, test_acc = 0.0, 0.0
+    all_preds = []
+    with torch.no_grad():
+        for input_ids, attention_mask, labels in test_loader:
+            input_ids = input_ids.to(device)
+            attention_mask = attention_mask.to(device)
+            labels = labels.to(device)
+            logits = model(input_ids, attention_mask)
+            test_loss += criterion(logits, labels).item()
+            test_acc += binary_accuracy(torch.sigmoid(logits), labels)
+            all_preds.append(torch.sigmoid(logits).cpu().numpy())
+
+    print(f"Test loss: {test_loss / len(test_loader):.4f} | "
+          f"Test accuracy: {(test_acc / len(test_loader)).item():.4f}")
+
+    # ── special subsets ──
+    all_preds = np.concatenate(all_preds)
+    all_labels = np.array([s.sentiment_class for s in dm.sentences[TEST]])
+    test_sents = dm.sentences[TEST]
+
+    neg_idx = get_negated_polarity_examples(test_sents)
+    rare_idx = get_rare_words_examples(test_sents, dm.sentiment_dataset)
+
+    for name, indices in [("Negated polarity", neg_idx), ("Rare words", rare_idx)]:
+        if len(indices) == 0:
+            print(f"  {name}: no examples found")
+            continue
+        acc = float(np.mean((all_preds[indices] >= 0.5).astype(float) == all_labels[indices]))
+        print(f"  {name} accuracy ({len(indices)} examples): {acc:.4f}")
