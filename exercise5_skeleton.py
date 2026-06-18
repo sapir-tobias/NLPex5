@@ -88,8 +88,8 @@ def get_word_to_ind(words_list):
     :param words_list: list of words
     :return: dict {word: index}
     """
-    # TODO
-    pass
+    dict = {word: i for i, word in enumerate(words_list)}
+    return dict
 
 
 def get_one_hot(size, ind):
@@ -99,8 +99,9 @@ def get_one_hot(size, ind):
     :param ind: index of the 1 entry
     :return: np.ndarray of shape (size,)
     """
-    # TODO
-    pass
+    vector = np.zeros(size)
+    vector[ind] = 1
+    return vector
 
 
 def average_one_hots(sent, word_to_ind):
@@ -111,8 +112,15 @@ def average_one_hots(sent, word_to_ind):
     :param word_to_ind: dict {word: index}
     :return: np.ndarray of shape (vocab_size,)
     """
-    # TODO
-    pass
+    words = sent.text
+    one_hots = []
+    for word in words:
+        if word in word_to_ind:
+            ind = word_to_ind[word]
+            one_hots.append(get_one_hot(len(word_to_ind), ind))
+    if not one_hots:
+        return np.zeros(len(word_to_ind))
+    return np.mean(one_hots, axis=0)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -131,8 +139,18 @@ def get_transformer_average(sent, tokenizer, embedding_matrix, embedding_dim):
     :param embedding_dim:    int
     :return: np.ndarray of shape (embedding_dim,)
     """
-    # TODO
-    pass
+    # tokenize the sentence
+    tokens = tokenizer.tokenize(" ".join(sent.text))
+    # convert tokens to IDs
+    token_ids = tokenizer.convert_tokens_to_ids(tokens)
+    # filter out special tokens and unknown IDs
+    valid_embeddings = []
+    for token_id in token_ids:
+        if 0 <= token_id < embedding_matrix.shape[0]:
+            valid_embeddings.append(embedding_matrix[token_id])
+    if not valid_embeddings:
+        return np.zeros(embedding_dim)
+    return np.mean(valid_embeddings, axis=0)        
 
 
 def sentence_to_embedding(sent, tokenizer, embedding_matrix, seq_len, embedding_dim):
