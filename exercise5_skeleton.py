@@ -193,9 +193,10 @@ def sentence_to_embedding(sent, tokenizer, embedding_matrix, seq_len, embedding_
     # Initialize the result matrix with zeros
     result = np.zeros((seq_len, embedding_dim), dtype=np.float32)
 
-    # Truncate the token IDs to seq_len
+    # Drop everything beyond seq_len
     token_ids = token_ids[:seq_len]
 
+    # Insert the corresponding embeddings for valid token IDs
     for i, tid in enumerate(token_ids):
         if tid < len(embedding_matrix):
             result[i] = embedding_matrix[tid]
@@ -345,8 +346,12 @@ def binary_accuracy(preds, y):
     y:     true labels {0, 1}
     :return: float
     """
-    # TODO
-    pass
+    # Round the preds
+    rounded_preds = torch.round(preds)
+    # Compare with true labels
+    correct = (rounded_preds == y).float()
+    # Return the accuracy
+    return correct.sum() / len(correct)
 
 
 def train_epoch(model, data_iterator, optimizer, criterion):
