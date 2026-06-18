@@ -534,9 +534,12 @@ def train_log_linear_with_one_hot():
     and runs the training process.
     Hyperparameters: lr=0.01, n_epochs=10, batch_size=64
     """
-    model = LogLinear(embedding_dim=len(data_loader.SentimentTreeBank().get_word_counts())).to(get_available_device())
-    data_manager = DataManager(data_type=ONEHOT_AVERAGE, use_sub_phrases=True, batch_size=64)
-    train_model(model, data_manager, n_epochs=10, lr=0.01)
+    data_manager = DataManager(data_type=ONEHOT_AVERAGE, use_sub_phrases=True, batch_size=64) 
+    input_dim = data_manager.get_input_shape()[0]
+    model = LogLinear(embedding_dim=input_dim).to(get_available_device())
+    history = train_model(model, data_manager, n_epochs=10, lr=0.01)
+    plot_and_save(history, "Log-Linear (Transformer Embeddings)", "log_linear_transformer")
+    evaluate_special_subsets(model, data_manager)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Section 7 – Log-linear with Transformer embeddings
@@ -553,8 +556,9 @@ def train_log_linear_with_transformer():
     data_manager = DataManager(data_type=TRANSFORMER_AVERAGE, use_sub_phrases=True, batch_size=64,
                                tokenizer=transformer_kwargs[0], embedding_matrix=transformer_kwargs[1],
                                embedding_dim=transformer_kwargs[2])
-    train_model(model, data_manager, n_epochs=10, lr=0.01)
-    pass
+    history = train_model(model, data_manager, n_epochs=10, lr=0.01)
+    plot_and_save(history, "Log-Linear (Transformer Embeddings)", "log_linear_transformer")
+    evaluate_special_subsets(model, data_manager)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
